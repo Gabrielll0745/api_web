@@ -1,169 +1,210 @@
 const express = require('express');
-const jsonfile = require('jsonfile');
-
 const app = express();
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const port = 3000;
-const DADOS_PATH = './banco.json';
+const PORT = 3000;
 
+// dados em memória (simula banco)
+const db = {
+  clientes: [{ id: 1, nome: "Gabriel Dias", telefone: "51 5558-55555", endereco: "Rua Nereu Batista" }],
+  categorias: [{ id: 101, nome: "Hardware" }, { id: 102, nome: "Periféricos" }],
+  produtos: [{ id: 1001, nome: "RTX 4090", estoque: 15, preco: 12500.00, id_categoria: 101 }],
+  pedidos: [{ id: 2001, data: "2025-10-27", valor_total: 12500.00, id_cliente: 1 }],
+  itensPedido: [{ id: 3001, id_pedido: 2001, id_produto: 1001, nome: "RTX 4090", quantidade: 1, preco: 12500.00 }]
+};
 
-let clientes = [{ id: 1, nome: "Gabriel Dias", telefone: "51 5558-55555", endereco: "Rua Nereu Batista" }];
-let nextClienteId = 2;
+// IDs
+let nextIds = { cliente: 2, categoria: 103, produto: 1002, pedido: 2002, item: 3002 };
 
-let categorias = [{ id: 101, nome: "Hardware" }, { id: 102, nome: "Periféricos" }];
-let nextCategoriaId = 103;
+// funções utilitárias
+const findById = (arr, id) => arr.find(el => el.id === id);
+const removeById = (arr, id) => arr.filter(el => el.id !== id);
 
-let produtos = [{ id: 1001, nome: "RTX 4090", estoque: 15, preco: 12500.00, id_categoria: 101 }];
-let nextProdutoId = 1002;
+// rota raiz (status)
+app.get('/', (req, res) => res.json({ message: 'API da Loja funcionando com melhorias!' }));
 
-let pedidos = [{ id: 2001, data: "2025-10-27", valor_total: 12500.00, id_cliente: 1 }];
-let nextPedidoId = 2002;
+// CLIENTES - lista
+app.get('/clientes', (req, res) => res.json(db.clientes));
 
-let itensPedido = [{ id: 3001, id_pedido: 2001, id_produto: 1001, nome: "RTX 4090", quantidade: 1, preco: 12500.00 }];
-let nextItemPedidoId = 3002;
-
-
-// ROTAS GERAIS
-app.get('/', (req, res) => {
-  res.json({ message: 'API da Loja funcionando.' });
-});
-
-// CLIENTES
-app.get('/clientes', (req, res) => { res.json(clientes); });
 app.post('/cliente', (req, res) => {
-  const novoCliente = { id: nextClienteId++, nome: req.body.nome, telefone: req.body.telefone, endereco: req.body.endereco };
-  clientes.push(novoCliente);
-  res.status(201).json(novoCliente);
+  const { nome, telefone, endereco } = req.body;
+  if (!nome || !telefone || !endereco)
+    return res.status(400).json({ message: 'Campos obrigatórios: nome, telefone e endereco.' });
+
+  const novo = { id: nextIds.cliente++, nome, telefone, endereco };
+  db.clientes.push(novo);
+  res.status(201).json(novo);
 });
+
 app.put('/cliente/:id', (req, res) => {
   const id = parseInt(req.params.id);
-  const cliente = clientes.find(c => c.id === id);
-  if (!cliente) return res.status(404).json({ message: 'Cliente não encontrado' });
+  const cliente = findById(db.clientes, id);
+  if (!cliente) return res.status(404).json({ message: 'Cliente não encontrado.' });
+
   Object.assign(cliente, req.body);
-  res.json(cliente);
+  res.json({ message: 'Cliente atualizado com sucesso.', cliente });
 });
+
 app.delete('/cliente/:id', (req, res) => {
   const id = parseInt(req.params.id);
-  const hasPedidos = pedidos.some(p => p.id_cliente === id);
-  if (hasPedidos) return res.status(400).json({ message: 'Erro: Cliente possui pedidos.' });
-  clientes = clientes.filter(c => c.id !== id);
-  res.json({ message: 'Cliente removido' });
+  if (db.pedidos.some(p => p.id_cliente === id))
+    return res.status(400).json({ message: 'Não é possível excluir: cliente possui pedidos.' });
+
+  db.clientes = removeById(db.clientes, id);
+  res.json({ message: 'Cliente removido com sucesso.' });
 });
 
+// CATEGORIAS - lista, cria, atualiza, remove
+app.get('/categorias', (req, res) => res.json(db.categorias));
 
-// CATEGORIAS
-app.get('/categorias', (req, res) => { res.json(categorias); });
 app.post('/categoria', (req, res) => {
-  const novaCategoria = { id: nextCategoriaId++, nome: req.body.nome };
-  categorias.push(novaCategoria);
-  res.status(201).json(novaCategoria);
+  const { nome } = req.body;
+  if (!nome) return res.status(400).json({ message: 'Campo nome é obrigatório.' });
+
+  const nova = { id: nextIds.categoria++, nome };
+  db.categorias.push(nova);
+  res.status(201).json(nova);
 });
+
 app.put('/categoria/:id', (req, res) => {
   const id = parseInt(req.params.id);
-  const categoria = categorias.find(c => c.id === id);
-  if (!categoria) return res.status(404).json({ message: 'Categoria não encontrada' });
+  const categoria = findById(db.categorias, id);
+  if (!categoria) return res.status(404).json({ message: 'Categoria não encontrada.' });
+
   Object.assign(categoria, req.body);
-  res.json(categoria);
+  res.json({ message: 'Categoria atualizada.', categoria });
 });
+
 app.delete('/categoria/:id', (req, res) => {
   const id = parseInt(req.params.id);
-  const hasProdutos = produtos.some(p => p.id_categoria === id);
-  if (hasProdutos) return res.status(400).json({ message: 'Erro: Categoria possui produtos.' });
-  categorias = categorias.filter(c => c.id !== id);
-  res.json({ message: 'Categoria removida' });
+  if (db.produtos.some(p => p.id_categoria === id))
+    return res.status(400).json({ message: 'Não é possível excluir: categoria possui produtos.' });
+
+  db.categorias = removeById(db.categorias, id);
+  res.json({ message: 'Categoria removida com sucesso.' });
 });
 
+// PRODUTOS - lista, cria, atualiza, remove
+app.get('/produtos', (req, res) => res.json(db.produtos));
 
-// PRODUTOS
-app.get('/produtos', (req, res) => { res.json(produtos); });
 app.post('/produto', (req, res) => {
-  const id_categoria = parseInt(req.body.id_categoria);
-  if (!categorias.find(c => c.id === id_categoria)) return res.status(400).json({ message: 'Erro: Categoria não existe.' });
-  const novoProduto = { id: nextProdutoId++, nome: req.body.nome, estoque: parseInt(req.body.estoque), preco: parseFloat(req.body.preco), id_categoria: id_categoria };
-  produtos.push(novoProduto);
-  res.status(201).json(novoProduto);
+  const { nome, estoque, preco, id_categoria } = req.body;
+  if (!nome || !estoque || !preco || !id_categoria)
+    return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
+
+  if (!findById(db.categorias, parseInt(id_categoria)))
+    return res.status(400).json({ message: 'Categoria não existe.' });
+
+  const novo = {
+    id: nextIds.produto++,
+    nome,
+    estoque: parseInt(estoque),
+    preco: parseFloat(preco),
+    id_categoria: parseInt(id_categoria)
+  };
+  db.produtos.push(novo);
+  res.status(201).json(novo);
 });
+
 app.put('/produto/:id', (req, res) => {
   const id = parseInt(req.params.id);
-  const produto = produtos.find(p => p.id === id);
-  if (!produto) return res.status(404).json({ message: 'Produto não encontrado' });
+  const produto = findById(db.produtos, id);
+  if (!produto) return res.status(404).json({ message: 'Produto não encontrado.' });
+
   Object.assign(produto, req.body);
-  res.json(produto);
+  res.json({ message: 'Produto atualizado.', produto });
 });
+
 app.delete('/produto/:id', (req, res) => {
   const id = parseInt(req.params.id);
-  const isReferenced = itensPedido.some(item => item.id_produto === id);
-  if (isReferenced) return res.status(400).json({ message: 'Erro: Produto está em um pedido.' });
-  produtos = produtos.filter(p => p.id !== id);
-  res.json({ message: 'Produto removido' });
+  if (db.itensPedido.some(item => item.id_produto === id))
+    return res.status(400).json({ message: 'Produto está associado a um pedido.' });
+
+  db.produtos = removeById(db.produtos, id);
+  res.json({ message: 'Produto removido.' });
 });
 
+// PEDIDOS - lista, cria, atualiza, remove
+app.get('/pedidos', (req, res) => res.json(db.pedidos));
 
-// PEDIDOS
-app.get('/pedidos', (req, res) => { res.json(pedidos); });
 app.post('/pedido', (req, res) => {
-  const id_cliente = parseInt(req.body.id_cliente);
-  if (!clientes.find(c => c.id === id_cliente)) return res.status(400).json({ message: 'Erro: Cliente não existe.' });
-  const novoPedido = { id: nextPedidoId++, data: new Date().toISOString().slice(0, 10), valor_total: parseFloat(req.body.valor_total) || 0.00, id_cliente: id_cliente };
-  pedidos.push(novoPedido);
-  res.status(201).json(novoPedido);
+  const { id_cliente } = req.body;
+  if (!id_cliente) return res.status(400).json({ message: 'Campo id_cliente é obrigatório.' });
+  if (!findById(db.clientes, parseInt(id_cliente)))
+    return res.status(400).json({ message: 'Cliente não encontrado.' });
+
+  const novo = {
+    id: nextIds.pedido++,
+    data: new Date().toISOString().slice(0, 10),
+    valor_total: 0,
+    id_cliente: parseInt(id_cliente)
+  };
+  db.pedidos.push(novo);
+  res.status(201).json(novo);
 });
+
 app.put('/pedido/:id', (req, res) => {
   const id = parseInt(req.params.id);
-  const pedido = pedidos.find(p => p.id === id);
-  if (!pedido) return res.status(404).json({ message: 'Pedido não encontrado' });
+  const pedido = findById(db.pedidos, id);
+  if (!pedido) return res.status(404).json({ message: 'Pedido não encontrado.' });
+
   Object.assign(pedido, req.body);
-  res.json(pedido);
+  res.json({ message: 'Pedido atualizado.', pedido });
 });
+
 app.delete('/pedido/:id', (req, res) => {
   const id = parseInt(req.params.id);
-  const hasItens = itensPedido.some(item => item.id_pedido === id);
-  if (hasItens) return res.status(400).json({ message: 'Erro: Pedido possui itens.' });
-  pedidos = pedidos.filter(p => p.id !== id);
-  res.json({ message: 'Pedido removido' });
+  if (db.itensPedido.some(i => i.id_pedido === id))
+    return res.status(400).json({ message: 'Pedido possui itens e não pode ser excluído.' });
+
+  db.pedidos = removeById(db.pedidos, id);
+  res.json({ message: 'Pedido removido com sucesso.' });
 });
 
-
-// ITEM_PEDIDO
+// ITENS DO PEDIDO - cria e remove item
 app.post('/pedido/:idPedido/item', (req, res) => {
-  const id_pedido = parseInt(req.params.idPedido);
-  const id_produto = parseInt(req.body.id_produto);
-  const quantidade = parseInt(req.body.quantidade);
+  const idPedido = parseInt(req.params.idPedido);
+  const { id_produto, quantidade } = req.body;
 
-  const pedido = pedidos.find(p => p.id === id_pedido);
-  if (!pedido) return res.status(400).json({ message: 'Erro: Pedido não encontrado.' });
+  const pedido = findById(db.pedidos, idPedido);
+  const produto = findById(db.produtos, parseInt(id_produto));
 
-  const produto = produtos.find(p => p.id === id_produto);
-  if (!produto) return res.status(400).json({ message: 'Erro: Produto não encontrado.' });
+  if (!pedido) return res.status(400).json({ message: 'Pedido não encontrado.' });
+  if (!produto) return res.status(400).json({ message: 'Produto não encontrado.' });
+  if (produto.estoque < quantidade)
+    return res.status(400).json({ message: 'Estoque insuficiente.' });
 
-  const novoItem = { id: nextItemPedidoId++, id_pedido: id_pedido, id_produto: id_produto, nome: produto.nome, quantidade: quantidade, preco: produto.preco };
-  itensPedido.push(novoItem);
+  const novoItem = {
+    id: nextIds.item++,
+    id_pedido: idPedido,
+    id_produto: produto.id,
+    nome: produto.nome,
+    quantidade: parseInt(quantidade),
+    preco: produto.preco
+  };
 
-  pedido.valor_total += (novoItem.preco * quantidade);
-  produto.estoque -= quantidade;
+  db.itensPedido.push(novoItem);
+  produto.estoque -= novoItem.quantidade;
+  pedido.valor_total += novoItem.preco * novoItem.quantidade;
 
   res.status(201).json(novoItem);
 });
+
 app.delete('/itempedido/:id', (req, res) => {
   const id = parseInt(req.params.id);
-  const itemIndex = itensPedido.findIndex(item => item.id === id);
-  if (itemIndex === -1) return res.status(404).json({ message: 'Item de Pedido não encontrado' });
+  const item = findById(db.itensPedido, id);
+  if (!item) return res.status(404).json({ message: 'Item de pedido não encontrado.' });
 
-  const itemRemovido = itensPedido[itemIndex];
-  const pedido = pedidos.find(p => p.id === itemRemovido.id_pedido);
-  const produto = produtos.find(p => p.id === itemRemovido.id_produto);
+  const pedido = findById(db.pedidos, item.id_pedido);
+  const produto = findById(db.produtos, item.id_produto);
 
-  if (pedido) pedido.valor_total -= (itemRemovido.preco * itemRemovido.quantidade);
-  if (produto) produto.estoque += itemRemovido.quantidade;
+  if (pedido) pedido.valor_total -= item.preco * item.quantidade;
+  if (produto) produto.estoque += item.quantidade;
 
-  itensPedido.splice(itemIndex, 1);
-  res.json({ message: 'Item de Pedido removido' });
+  db.itensPedido = removeById(db.itensPedido, id);
+  res.json({ message: 'Item removido com sucesso.' });
 });
 
-
-// INICIALIZAÇÃO
-app.listen(port, () => {
-  console.log(`API rodando em http://localhost:${port}`);
-});
+app.listen(PORT, () => console.log(`Servidor rodando em http://localhost:${PORT}`));
